@@ -21,6 +21,7 @@ Cargo.lock
 #.idea/
 
 .env
+todo*
 
 node_modules
 

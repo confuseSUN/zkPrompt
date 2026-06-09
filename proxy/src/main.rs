@@ -7,6 +7,15 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
+/*
+
+Data packet[23, 3, 3, 0, 53, 154, 103, 163, 134, 128, 117, 206, 103, 136, 101, 99, 130, 127, 143, 182, 7, 129, 252, 50, 250, 113, 1, 242, 195, 87, 6, 178, 255, 150, 32, 196, 45, 198, 207, 96, 14, 100, 180, 126, 104, 252, 144, 124, 99, 198, 136, 198, 100, 214, 195, 207, 127, 193]
+0x17 = 23 表示 Application Data
+03 03 表示version
+0x35 = 53 表示长度
+
+*/
+
 async fn forward(mut from: ReadHalf<TcpStream>, mut to: WriteHalf<TcpStream>) -> Result<()> {
     loop {
         let mut data = vec![];
@@ -37,10 +46,7 @@ async fn forward(mut from: ReadHalf<TcpStream>, mut to: WriteHalf<TcpStream>) ->
 
 /// TLS Handshake signal 0x16
 fn is_tls_handshake_packet(packet: &[u8]) -> bool {
-    match packet[0] {
-        0x14 | 0x15 | 0x16 => true,
-        _ => false,
-    }
+    matches!(packet.first(), Some(&0x14) | Some(&0x15) | Some(&0x16))
 }
 
 async fn handle_client(client_stream: TcpStream, addr: SocketAddr) -> Result<()> {
@@ -70,10 +76,11 @@ struct Command {
     forward: String,
 }
 
-// cargo run -- --forward api.openai.com --port 9100
+// cargo run -- --forward dashscope.aliyuncs.com --port 9100
+// cargo run -- --forward www.rust-lang.org --port 9100
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
     let args = Command::parse();
 
     let self_addr = SocketAddr::from(([0, 0, 0, 0], args.port));

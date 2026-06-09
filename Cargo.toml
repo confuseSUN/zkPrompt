@@ -5,3 +5,11 @@ members = [
    "prover",    
 ]
 resolver = "2"
+
+[workspace.dependencies]
+rustls = { path = "../rustls/rustls" }
+tokio-rustls = { path = "../tokio-rustls" }
+
+
+[patch."https://github.com/confuseSUN/rustls"]
+rustls = { path = "../rustls/rustls" }
