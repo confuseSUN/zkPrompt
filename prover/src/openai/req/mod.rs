@@ -29,36 +29,62 @@ impl<F: PrimeField> ReqVar<F> {
             + Self::content_type().len()
             + Self::content_length().len()
             + Self::connection().len()
-            + 2
-            + 1
-            + Self::system_prompt_key().len()
+            + 2 // skip "\r\n"
     }
 }
 
+/*
+
+POST /compatible-mode/v1/chat/completions HTTP/1.1
+Host: dashscope.aliyuncs.com
+Authorization: Bearer sk-********
+Content-Type: application/json
+Content-Length: 211
+Connection: close
+
+{
+  "model": "qwen3.6-plus",
+  "messages": [
+    {
+      "role": "system",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are a calculator here to help the user perform arithmetic operations."
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "Calculate 2 - 5."
+    }
+  ]
+}
+
+
+*/
+
 impl<F: PrimeField> ReqConstraint for ReqVar<F> {
     fn req_line() -> Vec<u8> {
-        format!("POST {} HTTP/1.1\r\n", env::var("URL").unwrap())
+        format!("POST {} HTTP/1.1\r\n", env::var("BASEPATH").unwrap())
             .as_bytes()
             .to_vec()
     }
 
     fn host() -> Vec<u8> {
-        format!("Host:{}\r\n", env::var("HOST").unwrap())
+        format!("Host: {}\r\n", env::var("HOST").unwrap())
             .as_bytes()
             .to_vec()
     }
 
     fn authorization() -> Vec<u8> {
-        format!(
-            "Authorization:Bearer {}\r\n",
-            env::var("OPENAI_API_KEY").unwrap()
-        )
-        .as_bytes()
-        .to_vec()
+        format!("Authorization: Bearer {}\r\n", env::var("API_KEY").unwrap())
+            .as_bytes()
+            .to_vec()
     }
 
     fn content_type() -> Vec<u8> {
-        "Content-Type:application/json\r\n".as_bytes().to_vec()
+        "Content-Type: application/json\r\n".as_bytes().to_vec()
     }
 
     fn content_length() -> Vec<u8> {
@@ -68,14 +94,20 @@ impl<F: PrimeField> ReqConstraint for ReqVar<F> {
     }
 
     fn connection() -> Vec<u8> {
-        "Connection:close\r\n".as_bytes().to_vec()
+        "Connection: close\r\n".as_bytes().to_vec()
     }
 
-    fn system_prompt_key() -> Vec<u8> {
-        "\"messages\":[{\"role\":\"system\",\"content\":\""
-            .as_bytes()
-            .to_vec()
-    }
+    // fn model() -> Vec<u8> {
+    //     format!("\"model\":\"{}\"", env::var("MODEL").unwrap())
+    //         .as_bytes()
+    //         .to_vec()
+    // }
+
+    // fn system_prompt_key() -> Vec<u8> {
+    //     "\"messages\":[{\"role\":\"system\",\"content\":\""
+    //         .as_bytes()
+    //         .to_vec()
+    // }
 
     fn generate_constraints(&self) -> Result<(), SynthesisError> {
         let req_line = Self::req_line();
@@ -84,7 +116,8 @@ impl<F: PrimeField> ReqConstraint for ReqVar<F> {
         let content_type = Self::content_type();
         let content_length = Self::content_length();
         let connection = Self::connection();
-        let system_prompt_key = Self::system_prompt_key();
+        // let model = Self::model();
+        // let system_prompt_key = Self::system_prompt_key();
 
         let req_line_vars = req_line
             .iter()
@@ -110,10 +143,14 @@ impl<F: PrimeField> ReqConstraint for ReqVar<F> {
             .iter()
             .map(|x| UInt8::constant(*x))
             .collect::<Vec<UInt8<F>>>();
-        let system_prompt_key_vars = system_prompt_key
-            .iter()
-            .map(|x| UInt8::constant(*x))
-            .collect::<Vec<UInt8<F>>>();
+        // let model_vars = model
+        //     .iter()
+        //     .map(|x| UInt8::constant(*x))
+        //     .collect::<Vec<UInt8<F>>>();
+        // let system_prompt_key_vars = system_prompt_key
+        //     .iter()
+        //     .map(|x| UInt8::constant(*x))
+        //     .collect::<Vec<UInt8<F>>>();
 
         let mut start = 0;
         let mut end = req_line.len();
@@ -140,28 +177,32 @@ impl<F: PrimeField> ReqConstraint for ReqVar<F> {
         enforce_equals(&connection_vars, &self.data_vars[start..end])?;
 
         // skip "\r\n"
-        end += 2;
+        // end += 2;
 
-        // skip "{""
-        end += 1;
+        // // skip "{""
+        // end += 1;
 
-        start = end;
-        end += system_prompt_key.len();
-        enforce_equals(&system_prompt_key_vars, &self.data_vars[start..end])?;
+        // start = end;
+        // end += model.len();
+        // enforce_equals(&model_vars, &self.data_vars[start..end])?;
 
-        // skip prompt
-        end += self.prompt_len;
+        // start = end;
+        // end += system_prompt_key.len();
+        // enforce_equals(&system_prompt_key_vars, &self.data_vars[start..end])?;
 
-        start = end;
-        end += 3; // "\"},"
-        enforce_equals(
-            &[
-                UInt8::constant(34),
-                UInt8::constant(125),
-                UInt8::constant(39),
-            ],
-            &self.data_vars[start..end],
-        )?;
+        // // skip prompt
+        // end += self.prompt_len;
+
+        // start = end;
+        // end += 3; // "\"},"
+        // enforce_equals(
+        //     &[
+        //         UInt8::constant(34),
+        //         UInt8::constant(125),
+        //         UInt8::constant(39),
+        //     ],
+        //     &self.data_vars[start..end],
+        // )?;
 
         Ok(())
     }
@@ -180,11 +221,14 @@ mod test {
     #[test]
     fn test_req_constraint() {
         env::set_var("HOST", "api.openai.com");
-        env::set_var("URL", "/v1/chat/completions");
-        env::set_var("OPENAI_API_KEY", "sk-svcacct");
+        env::set_var("BASEPATH", "/v1/chat/completions");
+        env::set_var("API_KEY", "sk-svcacct");
         env::set_var("CONTENT_LENGTH", "1024");
+        env::set_var("MODEL", "qwen3.6-plus");
+        let byes = hex::decode("504f5354202f636f6d70617469626c652d6d6f64652f76312f636861742f636f6d706c6574696f6e7320485454502f312e310d0a486f73743a206461736873636f70652e616c6979756e63732e636f6d0d0a617574686f72697a6174696f6e3a2042656172657220736b0d0a636f6e74656e742d747970653a206170706c69636174696f6e2f6a736f6e0d0a436f6e74656e742d4c656e6774683a203231310d0a436f6e6e656374696f6e3a20636c6f73650d0a0d0a7b226d6f64656c223a227177656e332e362d706c7573222c226d65737361676573223a5b7b22726f6c65223a2273797374656d222c22636f6e74656e74223a5b7b2274797065223a2274657874222c2274657874223a22596f752061726520612063616c63756c61746f72206865726520746f2068656c7020746865207573657220706572666f726d2061726974686d65746963206f7065726174696f6e732e227d5d7d2c7b22726f6c65223a2275736572222c22636f6e74656e74223a2243616c63756c6174652032202d20352e227d5d7d").unwrap();
 
-        let byes = hex::decode("504f5354202f76312f636861742f636f6d706c6574696f6e7320485454502f312e310d0a486f73743a6170692e6f70656e61692e636f6d0d0a417574686f72697a6174696f6e3a42656172657220736b2d737663616363740d0a436f6e74656e742d547970653a6170706c69636174696f6e2f6a736f6e0d0a436f6e74656e742d4c656e6774683a313032340d0a436f6e6e656374696f6e3a636c6f73650d0a0d0a7b226d65737361676573223a5b7b22726f6c65223a2273797374656d222c22636f6e74656e74223a22796f75206172652061207a7970686572206769726c21227d2c7b22726f6c65223a2275736572222c22636f6e74656e74223a227768617420697320796f7572206e616d653f227d5d2c226d6f64656c223a226770742d346f2d6d696e69222c2274656d7065726174757265223a20302e377d").unwrap();
+        println!("{:?}", String::from_utf8_lossy(&byes));
+
         let byte_vars = byes
             .iter()
             .map(|b| UInt8::constant(*b))

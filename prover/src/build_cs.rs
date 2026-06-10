@@ -25,11 +25,23 @@ use crate::{
     utils::compress_var,
 };
 
+#[derive(Clone)]
 pub struct ZkPrompt {
     pub cipher_texts: Vec<u8>,
     pub key: Vec<u8>,
     pub nonce: Vec<u8>,
     pub count: u32,
+}
+
+impl ZkPrompt {
+    pub fn mock_ciucuit() -> Self {
+        Self {
+            cipher_texts: vec![0; 2020],
+            key: vec![0; 32],
+            nonce: vec![0; 12],
+            count: 1,
+        }
+    }
 }
 
 impl ConstraintSynthesizer<Fr> for ZkPrompt {
@@ -71,7 +83,7 @@ impl ConstraintSynthesizer<Fr> for ZkPrompt {
         );
         chacha20.generate_constraints()?;
 
-        let prompt_len = env::var("PROMPT_LEN").unwrap().parse().unwrap();
+        let prompt_len = env::var("CONTENT_LENGTH").unwrap().parse().unwrap();
         let req_var = ReqVar::new(&chacha20.output_vars, prompt_len);
         req_var.generate_constraints()?;
 
@@ -110,5 +122,31 @@ impl ConstraintSynthesizer<Fr> for ZkPrompt {
         println!("cs size:{}", cs.num_constraints());
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ark_bn254::Bn254;
+    use ark_groth16::Groth16;
+    use ark_snark::{CircuitSpecificSetupSNARK, SNARK};
+    use ark_std::{
+        rand::{RngCore, SeedableRng},
+        test_rng,
+    };
+
+    use crate::build_cs::ZkPrompt;
+
+    #[test]
+    fn test() {
+        let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
+
+        let circuit = ZkPrompt::mock_ciucuit();
+        let (pk, vk) = Groth16::<Bn254>::setup(circuit.clone(), &mut rng).unwrap();
+
+        let pvk = Groth16::<Bn254>::process_vk(&vk).unwrap();
+        
+
+        
     }
 }

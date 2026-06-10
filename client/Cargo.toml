@@ -16,6 +16,6 @@ dotenvy = "0.15"
 rig-core = "0.38"
 reqwest = "0.13"
 bytes = "1.11.1"
-
+regex = "1.10"
 
 

@@ -42,7 +42,7 @@ Instead of blindly trusting relay services, developers can obtain cryptographic 
 
 **Under development, do not use in production environments**
 
-## Testing
+## Quick Start
 
 Copy [`.env_tmplate`](.env_tmplate) to `.env` and fill in the required values, then start the local relay:
 

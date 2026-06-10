@@ -13,7 +13,9 @@ pub trait ReqConstraint {
 
     fn connection() -> Vec<u8>;
 
-    fn system_prompt_key() -> Vec<u8>;
+    // fn model() -> Vec<u8>;
+
+    // fn system_prompt_key() -> Vec<u8>;
 
     fn generate_constraints(&self) -> Result<(), SynthesisError>;
 }

@@ -8,7 +8,7 @@ use tokio::{
 use tokio_rustls::TlsConnector;
 use webpki::types::ServerName;
 
-use crate::key_log::KeyLogVec;
+use crate::{key_log::KeyLogVec, utils::check_and_padding};
 
 pub trait ProxyClient {
     fn proxy_url(&self) -> &str;
@@ -41,6 +41,10 @@ pub trait ProxyClient {
         Self: Sync,
     {
         async move {
+            println!("before padding: {:?}\n", String::from_utf8_lossy(data));
+            let request = check_and_padding(data)?;
+            println!("after padding: {:?}", String::from_utf8_lossy(&request));
+
             let proxy_stream = TcpStream::connect(self.proxy_url()).await?;
 
             let key_log = Arc::new(KeyLogVec::new("client_keylog"));
@@ -51,7 +55,7 @@ pub trait ProxyClient {
                 ServerName::try_from(self.server_name().to_owned()).expect("Invalid server name");
             let mut tls_stream = connector.connect(server_name, proxy_stream).await?;
 
-            tls_stream.write_all(data).await?;
+            tls_stream.write_all(&request).await?;
 
             let mut data = vec![];
             let mut buffer = [0u8; 8192];
