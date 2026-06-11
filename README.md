@@ -50,10 +50,10 @@ Copy [`.env_tmplate`](.env_tmplate) to `.env` and fill in the required values, t
 cargo run -p proxy -- --forward dashscope.aliyuncs.com --port 9100
 ```
 
-In another terminal, run the Rig-compatible client test:
+In another terminal, run the example:
 
 ```bash
-cargo test --package client --lib -- client::tests::test_client --exact --nocapture
+cargo run -p example
 ```
 
 The relay upstream host must match the target model provider.
