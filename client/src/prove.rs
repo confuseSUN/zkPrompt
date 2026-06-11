@@ -10,6 +10,7 @@ use ark_std::{
     rand::{RngCore, SeedableRng},
     test_rng,
 };
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use prover::{
     build_cs::ZkPrompt,
     commitment::{cipher_commitment, prompt_commitment},
@@ -129,6 +130,15 @@ impl crate::client::ZKClient {
         let (cipher, key, nonce) = materials.encrypt_with_chacha20()?;
 
         let circuit = ZkPrompt::new(cipher.clone(), key, nonce, 1);
+
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        circuit
+            .clone()
+            .generate_constraints(cs.clone())
+            .map_err(|error| anyhow::anyhow!("circuit synthesis failed: {error}"))?;
+        if !cs.is_satisfied().unwrap() {
+            anyhow::bail!("circuit constraints not satisfied; HTTP wire does not match circuit template");
+        }
 
         let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
 

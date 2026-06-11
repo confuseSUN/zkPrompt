@@ -33,37 +33,6 @@ impl<F: PrimeField> ReqVar<F> {
     }
 }
 
-/*
-
-POST /compatible-mode/v1/chat/completions HTTP/1.1
-Host: dashscope.aliyuncs.com
-Authorization: Bearer sk-********
-Content-Type: application/json
-Content-Length: 211
-Connection: close
-
-{
-  "model": "qwen3.6-plus",
-  "messages": [
-    {
-      "role": "system",
-      "content": [
-        {
-          "type": "text",
-          "text": "You are a calculator here to help the user perform arithmetic operations."
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": "Calculate 2 - 5."
-    }
-  ]
-}
-
-
-*/
-
 impl<F: PrimeField> ReqConstraint for ReqVar<F> {
     fn req_line() -> Vec<u8> {
         format!("POST {} HTTP/1.1\r\n", env::var("BASEPATH").unwrap())
@@ -78,17 +47,17 @@ impl<F: PrimeField> ReqConstraint for ReqVar<F> {
     }
 
     fn authorization() -> Vec<u8> {
-        format!("Authorization: Bearer {}\r\n", env::var("API_KEY").unwrap())
+        format!("authorization: Bearer {}\r\n", env::var("API_KEY").unwrap())
             .as_bytes()
             .to_vec()
     }
 
     fn content_type() -> Vec<u8> {
-        "Content-Type: application/json\r\n".as_bytes().to_vec()
+        "content-type: application/json\r\n".as_bytes().to_vec()
     }
 
     fn content_length() -> Vec<u8> {
-        format!("Content-Length:{}\r\n", env::var("CONTENT_LENGTH").unwrap())
+        format!("Content-Length: {}\r\n", env::var("CONTENT_LENGTH").unwrap())
             .as_bytes()
             .to_vec()
     }
@@ -97,18 +66,6 @@ impl<F: PrimeField> ReqConstraint for ReqVar<F> {
         "Connection: close\r\n".as_bytes().to_vec()
     }
 
-    // fn model() -> Vec<u8> {
-    //     format!("\"model\":\"{}\"", env::var("MODEL").unwrap())
-    //         .as_bytes()
-    //         .to_vec()
-    // }
-
-    // fn system_prompt_key() -> Vec<u8> {
-    //     "\"messages\":[{\"role\":\"system\",\"content\":\""
-    //         .as_bytes()
-    //         .to_vec()
-    // }
-
     fn generate_constraints(&self) -> Result<(), SynthesisError> {
         let req_line = Self::req_line();
         let host = Self::host();
@@ -116,8 +73,6 @@ impl<F: PrimeField> ReqConstraint for ReqVar<F> {
         let content_type = Self::content_type();
         let content_length = Self::content_length();
         let connection = Self::connection();
-        // let model = Self::model();
-        // let system_prompt_key = Self::system_prompt_key();
 
         let req_line_vars = req_line
             .iter()
@@ -143,14 +98,6 @@ impl<F: PrimeField> ReqConstraint for ReqVar<F> {
             .iter()
             .map(|x| UInt8::constant(*x))
             .collect::<Vec<UInt8<F>>>();
-        // let model_vars = model
-        //     .iter()
-        //     .map(|x| UInt8::constant(*x))
-        //     .collect::<Vec<UInt8<F>>>();
-        // let system_prompt_key_vars = system_prompt_key
-        //     .iter()
-        //     .map(|x| UInt8::constant(*x))
-        //     .collect::<Vec<UInt8<F>>>();
 
         let mut start = 0;
         let mut end = req_line.len();
@@ -175,35 +122,7 @@ impl<F: PrimeField> ReqConstraint for ReqVar<F> {
         start = end;
         end += connection.len();
         enforce_equals(&connection_vars, &self.data_vars[start..end])?;
-
-        // skip "\r\n"
-        // end += 2;
-
-        // // skip "{""
-        // end += 1;
-
-        // start = end;
-        // end += model.len();
-        // enforce_equals(&model_vars, &self.data_vars[start..end])?;
-
-        // start = end;
-        // end += system_prompt_key.len();
-        // enforce_equals(&system_prompt_key_vars, &self.data_vars[start..end])?;
-
-        // // skip prompt
-        // end += self.prompt_len;
-
-        // start = end;
-        // end += 3; // "\"},"
-        // enforce_equals(
-        //     &[
-        //         UInt8::constant(34),
-        //         UInt8::constant(125),
-        //         UInt8::constant(39),
-        //     ],
-        //     &self.data_vars[start..end],
-        // )?;
-
+        
         Ok(())
     }
 }

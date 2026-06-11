@@ -6,8 +6,7 @@ use rig_core::{client::CompletionClient, completion::Prompt};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
-    let api_key =
-        env::var("QWEN_API_KEY").map_err(|_| anyhow::anyhow!("QWEN_API_KEY must be set"))?;
+    let api_key = env::var("API_KEY").map_err(|_| anyhow::anyhow!("API_KEY must be set"))?;
     let base_url = env::var("QWEN_BASE_URL")
         .unwrap_or_else(|_| "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string());
 
@@ -24,12 +23,8 @@ async fn main() -> anyhow::Result<()> {
         .preamble("You are a calculator here to help the user perform arithmetic operations.")
         .build();
 
+    // TODO: Prove for response
     let response = agent.prompt("Calculate 2 - 5.").await?;
-
-    // let materials = zk_client
-    //     .prove_materials()
-    //     .ok_or_else(|| anyhow::anyhow!("no prove materials; send a request first"))?;
-    // println!("keylog:{:?}", materials.keylog);
 
     zk_client.prove().unwrap();
 

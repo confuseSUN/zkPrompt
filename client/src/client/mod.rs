@@ -82,8 +82,6 @@ impl ProxyClient for ZKClient {
         async move {
             let padded = check_and_padding(data)?;
 
-            println!("Request: {:?}", padded.request.clone());
-
             let proxy_stream = TcpStream::connect(self.proxy_url()).await?;
             let key_log = Arc::new(KeyLogVec::new("client_keylog"));
             let config = self.load_client_config(key_log.clone());
