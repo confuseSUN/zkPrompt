@@ -129,7 +129,13 @@ impl crate::client::ZKClient {
 
         let (cipher, key, nonce) = materials.encrypt_with_chacha20()?;
 
-        let circuit = ZkPrompt::new(cipher.clone(), key, nonce, 1);
+        let circuit = ZkPrompt::new(
+            cipher.clone(),
+            key,
+            nonce,
+            1,
+            self.request_config().clone(),
+        );
 
         let cs = ConstraintSystem::<Fr>::new_ref();
         circuit

@@ -5,7 +5,7 @@ pub mod utils;
 
 pub use client::{Client, ZKClient};
 pub use prove::{ProveMaterials, ProveResult};
-pub use utils::PaddedRequest;
+pub use prover::openai::{check_and_pad, PaddedRequest, RequestConfig};
 
 #[cfg(test)]
 mod tests {

@@ -52,7 +52,6 @@ pub fn prompt_commitment(prompt: &[u8]) -> Fr {
 #[cfg(test)]
 mod test {
     use ark_bn254::Fr;
-    use ark_ff::PrimeField;
     use ark_r1cs_std::{
         alloc::AllocVar,
         fields::{fp::FpVar, FieldVar},

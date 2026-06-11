@@ -1,5 +1,3 @@
-use std::env;
-
 use ark_bn254::Fr;
 use ark_r1cs_std::{
     alloc::AllocVar,
@@ -21,7 +19,7 @@ use crate::{
         bn254::{constraint::MimcBn254Var, MimcBn254},
         MiMC,
     },
-    openai::req::{traits::ReqConstraint, ReqVar},
+    openai::{req::ReqVar, RequestConfig},
     utils::compress_var,
 };
 
@@ -31,24 +29,33 @@ pub struct ZkPrompt {
     pub key: Vec<u8>,
     pub nonce: Vec<u8>,
     pub count: u32,
+    pub config: RequestConfig,
 }
 
 impl ZkPrompt {
-    pub fn new(cipher_texts: Vec<u8>, key: Vec<u8>, nonce: Vec<u8>, count: u32) -> Self {
+    pub fn new(
+        cipher_texts: Vec<u8>,
+        key: Vec<u8>,
+        nonce: Vec<u8>,
+        count: u32,
+        config: RequestConfig,
+    ) -> Self {
         Self {
             cipher_texts,
             key,
             nonce,
             count,
+            config,
         }
     }
 
-    pub fn mock_ciucuit() -> Self {
+    pub fn mock_ciucuit(config: RequestConfig) -> Self {
         Self {
             cipher_texts: vec![0; 2020],
             key: vec![0; 32],
             nonce: vec![0; 12],
             count: 1,
+            config,
         }
     }
 }
@@ -92,8 +99,8 @@ impl ConstraintSynthesizer<Fr> for ZkPrompt {
         );
         chacha20.generate_constraints()?;
 
-        let prompt_len = env::var("CONTENT_LENGTH").unwrap().parse().unwrap();
-        let req_var = ReqVar::new(&chacha20.output_vars, prompt_len);
+        let prompt_len = self.config.content_length;
+        let req_var = ReqVar::new(&chacha20.output_vars, self.config.clone());
         req_var.generate_constraints()?;
 
         let start = req_var.prompt_start();
@@ -136,7 +143,7 @@ impl ConstraintSynthesizer<Fr> for ZkPrompt {
 
 #[cfg(test)]
 mod test {
-    use std::{env, time::Instant};
+    use std::time::Instant;
 
     use ark_bn254::{Bn254, Fr};
     use ark_groth16::Groth16;
@@ -155,29 +162,26 @@ mod test {
         build_cs::ZkPrompt,
         chacha20::ChaCha20Var,
         commitment::{cipher_commitment, prompt_commitment},
-        openai::req::{traits::ReqConstraint, ReqVar},
+        openai::{req::ReqVar, RequestConfig},
     };
 
-    fn set_test_env() {
-        env::set_var("HOST", "dashscope.aliyuncs.com");
-        env::set_var("BASEPATH", "/compatible-mode/v1/chat/completions");
-        env::set_var("API_KEY", "sk");
-        env::set_var("CONTENT_LENGTH", "64");
+    fn test_config() -> RequestConfig {
+        RequestConfig {
+            host: "dashscope.aliyuncs.com".into(),
+            basepath: "/compatible-mode/v1/chat/completions".into(),
+            api_key: "sk".into(),
+            content_length: 64,
+        }
     }
 
-    fn http_plaintext_from_env() -> Vec<u8> {
-        let content_length: usize = env::var("CONTENT_LENGTH").unwrap().parse().unwrap();
-        let prompt_start = ReqVar::<Fr>::new(&[], 0).prompt_start();
-
+    fn http_plaintext_from_config(config: &RequestConfig) -> Vec<u8> {
+        let prompt_start = ReqVar::<Fr>::new(&[], config.clone()).prompt_start();
         let mut plaintext = Vec::new();
-        plaintext.extend(ReqVar::<Fr>::req_line());
-        plaintext.extend(ReqVar::<Fr>::host());
-        plaintext.extend(ReqVar::<Fr>::authorization());
-        plaintext.extend(ReqVar::<Fr>::content_type());
-        plaintext.extend(ReqVar::<Fr>::content_length());
-        plaintext.extend(ReqVar::<Fr>::connection());
+        for section in config.header_sections() {
+            plaintext.extend(section);
+        }
         plaintext.extend(b"\r\n");
-        plaintext.resize(prompt_start + content_length, 0);
+        plaintext.resize(prompt_start + config.content_length, 0);
         plaintext
     }
 
@@ -228,8 +232,8 @@ mod test {
             .collect()
     }
 
-    fn witness_from_env() -> ZkPrompt {
-        let plaintext = http_plaintext_from_env();
+    fn witness_from_config(config: RequestConfig) -> ZkPrompt {
+        let plaintext = http_plaintext_from_config(&config);
         let key = vec![1u8; 32];
         let nonce = vec![2u8; 12];
         let count = 1;
@@ -245,6 +249,7 @@ mod test {
             key,
             nonce,
             count,
+            config,
         }
     }
 
@@ -271,9 +276,8 @@ mod test {
             .map(|(cipher, stream)| cipher ^ stream)
             .collect();
 
-        let content_length: usize = env::var("CONTENT_LENGTH").unwrap().parse().unwrap();
-        let prompt_start = ReqVar::<Fr>::new(&[], 0).prompt_start();
-        let prompt = &plaintext[prompt_start..prompt_start + content_length];
+        let prompt_start = ReqVar::<Fr>::new(&[], circuit.config.clone()).prompt_start();
+        let prompt = &plaintext[prompt_start..prompt_start + circuit.config.content_length];
 
         vec![
             prompt_commitment(prompt),
@@ -283,9 +287,8 @@ mod test {
 
     #[test]
     fn test() {
-        set_test_env();
-
-        let circuit = witness_from_env();
+        let config = test_config();
+        let circuit = witness_from_config(config);
         assert_circuit_satisfied(&circuit);
 
         let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());

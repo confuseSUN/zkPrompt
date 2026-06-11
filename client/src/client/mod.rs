@@ -16,11 +16,13 @@ use tokio_rustls::TlsConnector;
 use webpki::types::ServerName;
 
 pub mod proxy;
+use prover::openai::check_and_pad;
+
 use crate::{
     key_log::KeyLogVec,
     prove::{new_prove_session, ProveSession},
-    utils::{check_and_padding, decode_response, encode_request, http_client_error},
-    ProveMaterials,
+    utils::{decode_response, encode_request, http_client_error},
+    ProveMaterials, RequestConfig,
 };
 pub use proxy::ProxyClient;
 
@@ -29,23 +31,33 @@ pub struct ZKClient {
     http_client: reqwest::Client,
     proxy_url: Arc<str>,
     server_name: Arc<str>,
+    request_config: RequestConfig,
     session: ProveSession,
 }
 
 impl Default for ZKClient {
     fn default() -> Self {
-        Self::new("127.0.0.1:9100")
+        Self::new(
+            "127.0.0.1:9100",
+            RequestConfig::from_env().expect("HOST, BASEPATH, API_KEY, CONTENT_LENGTH must be set"),
+        )
     }
 }
 
 impl ZKClient {
-    pub fn new(proxy_url: impl Into<String>) -> Self {
+    pub fn new(proxy_url: impl Into<String>, request_config: RequestConfig) -> Self {
+        let server_name = Arc::from(request_config.host.clone());
         Self {
             http_client: reqwest::Client::default(),
             proxy_url: Arc::from(proxy_url.into()),
-            server_name: Arc::from("dashscope.aliyuncs.com"),
+            server_name,
+            request_config,
             session: new_prove_session(),
         }
+    }
+
+    pub fn request_config(&self) -> &RequestConfig {
+        &self.request_config
     }
 
     pub(crate) fn prove_session(&self) -> &ProveSession {
@@ -58,11 +70,6 @@ impl ZKClient {
 
     pub fn proxy_url(&self) -> &str {
         &self.proxy_url
-    }
-
-    pub fn with_server_name(mut self, server_name: impl Into<String>) -> Self {
-        self.server_name = Arc::from(server_name.into());
-        self
     }
 }
 
@@ -80,7 +87,7 @@ impl ProxyClient for ZKClient {
         data: &'a [u8],
     ) -> impl Future<Output = anyhow::Result<Vec<u8>>> + Send + 'a {
         async move {
-            let padded = check_and_padding(data)?;
+            let padded = check_and_pad(&self.request_config, data)?;
 
             let proxy_stream = TcpStream::connect(self.proxy_url()).await?;
             let key_log = Arc::new(KeyLogVec::new("client_keylog"));

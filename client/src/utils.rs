@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use regex::bytes::Regex;
 use rig_core::{
     http_client::{self, LazyBody, Request, Response},
     wasm_compat::WasmCompatSend,
@@ -62,96 +61,6 @@ where
     wire.extend_from_slice(&body);
 
     Bytes::from(wire)
-}
-
-const HTTP_BODY_SEP: &[u8] = b"\r\n\r\n";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PaddedRequest {
-    pub request: Vec<u8>,
-    pub body: Vec<u8>,
-}
-
-fn split_http_body(data: &[u8]) -> anyhow::Result<(&[u8], &[u8])> {
-    let sep_pos = data
-        .windows(HTTP_BODY_SEP.len())
-        .position(|window| window == HTTP_BODY_SEP)
-        .ok_or_else(|| anyhow::anyhow!("HTTP request missing header/body separator"))?;
-    Ok((&data[..sep_pos], &data[sep_pos + HTTP_BODY_SEP.len()..]))
-}
-
-pub fn check_and_padding(data: &[u8]) -> anyhow::Result<PaddedRequest> {
-    let target_body_len: usize = std::env::var("CONTENT_LENGTH")
-        .map_err(|_| anyhow::anyhow!("CONTENT_LENGTH must be set"))?
-        .parse()
-        .map_err(|error| anyhow::anyhow!("invalid CONTENT_LENGTH: {error}"))?;
-
-    let re = Regex::new(
-        r#"(?is)POST\s+[^\r\n]+\r\nHost:\s*([^\r\n]*)\r\nauthorization:\s*Bearer\s+([^\r\n]+)\r\ncontent-type:\s*application/json\r\nContent-Length:\s*([^\r\n]*)\r\nConnection:\s*close\r\n\r\n\{.*?"model":"([^"]*)".*?"role":"system".*?"text":"([^"]*)".*?"role":"user".*?"content":"([^"]*)".*?\}"#,
-    )
-    .expect("Invalid regex pattern");
-    if re.captures(data).is_none() {
-        return Err(anyhow::anyhow!("failed to parse chat completion request"));
-    }
-
-    let (headers, body) = split_http_body(data)?;
-
-    if body.len() == target_body_len {
-        return Ok(PaddedRequest {
-            request: data.to_vec(),
-            body: body.to_vec(),
-        });
-    }
-    if body.len() > target_body_len {
-        return Err(anyhow::anyhow!(
-            "request body length {} exceeds maximum {target_body_len}",
-            body.len()
-        ));
-    }
-
-    let pad_len = target_body_len - body.len();
-    let text_re = Regex::new(r#"(?s)"role":"user","content":"((?:[^"\\]|\\.)*)""#)
-        .expect("Invalid regex pattern");
-    let caps = text_re
-        .captures(body)
-        .ok_or_else(|| anyhow::anyhow!("user content field not found"))?;
-    let text = caps
-        .get(1)
-        .ok_or_else(|| anyhow::anyhow!("user content field not found"))?;
-    let insert_pos = text.end();
-
-    let mut new_body = Vec::with_capacity(target_body_len);
-    new_body.extend_from_slice(&body[..insert_pos]);
-    new_body.extend(std::iter::repeat(b' ').take(pad_len));
-    new_body.extend_from_slice(&body[insert_pos..]);
-    if new_body.len() != target_body_len {
-        return Err(anyhow::anyhow!(
-            "padding failed: expected body length {target_body_len}, got {}",
-            new_body.len()
-        ));
-    }
-
-    let headers_str = std::str::from_utf8(headers)?;
-    let lines: Vec<&str> = headers_str.split("\r\n").collect();
-    let mut wire = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
-        if i > 0 {
-            wire.extend_from_slice(b"\r\n");
-        }
-        if let Some((key, _)) = line.split_once(':') {
-            if key.eq_ignore_ascii_case("content-length") {
-                wire.extend_from_slice(format!("Content-Length: {target_body_len}").as_bytes());
-                continue;
-            }
-        }
-        wire.extend_from_slice(line.as_bytes());
-    }
-    wire.extend_from_slice(b"\r\n\r\n");
-    wire.extend_from_slice(&new_body);
-    Ok(PaddedRequest {
-        request: wire,
-        body: new_body,
-    })
 }
 
 pub fn decode_response<U>(data: Vec<u8>) -> http_client::Result<Response<LazyBody<U>>>
