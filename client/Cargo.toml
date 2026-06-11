@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ark-bn254 = "0.5"
+ark-ff = "0.5"
+ark-groth16 = { version = "0.5", default-features = false }
+ark-snark = "0.5"
+ark-std = "0.5"
+prover = { path = "../prover" }
 rustls.workspace = true
 tokio-rustls.workspace = true
 webpki = { package = "rustls-webpki", version = "0.102.8", features = ["alloc"], default-features = false }

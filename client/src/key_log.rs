@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use rustls::KeyLog;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct KeyLogItem {
     pub label: String,
     pub client_random: Vec<u8>,

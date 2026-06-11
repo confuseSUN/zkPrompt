@@ -8,16 +8,34 @@ use rig_core::{
     providers::openai::OpenAICompletionsExt,
     wasm_compat::WasmCompatSend,
 };
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
+use tokio_rustls::TlsConnector;
+use webpki::types::ServerName;
 
 pub mod proxy;
-use crate::utils::{decode_response, encode_request, http_client_error};
+use crate::{
+    key_log::KeyLogVec,
+    prove::{new_prove_session, ProveSession},
+    utils::{check_and_padding, decode_response, encode_request, http_client_error},
+    ProveMaterials,
+};
 pub use proxy::ProxyClient;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ZKClient {
     http_client: reqwest::Client,
     proxy_url: Arc<str>,
     server_name: Arc<str>,
+    session: ProveSession,
+}
+
+impl Default for ZKClient {
+    fn default() -> Self {
+        Self::new("127.0.0.1:9100")
+    }
 }
 
 impl ZKClient {
@@ -26,7 +44,16 @@ impl ZKClient {
             http_client: reqwest::Client::default(),
             proxy_url: Arc::from(proxy_url.into()),
             server_name: Arc::from("dashscope.aliyuncs.com"),
+            session: new_prove_session(),
         }
+    }
+
+    pub(crate) fn prove_session(&self) -> &ProveSession {
+        &self.session
+    }
+
+    pub fn prove_materials(&self) -> Option<ProveMaterials> {
+        self.session.lock().unwrap().clone()
     }
 
     pub fn proxy_url(&self) -> &str {
@@ -47,6 +74,48 @@ impl ProxyClient for ZKClient {
     fn server_name(&self) -> &str {
         &self.server_name
     }
+
+    fn execute<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> impl Future<Output = anyhow::Result<Vec<u8>>> + Send + 'a {
+        async move {
+            let padded = check_and_padding(data)?;
+
+            println!("Request: {:?}", padded.request.clone());
+
+            let proxy_stream = TcpStream::connect(self.proxy_url()).await?;
+            let key_log = Arc::new(KeyLogVec::new("client_keylog"));
+            let config = self.load_client_config(key_log.clone());
+
+            let connector = TlsConnector::from(config);
+            let server_name =
+                ServerName::try_from(self.server_name().to_owned()).expect("Invalid server name");
+            let mut tls_stream = connector.connect(server_name, proxy_stream).await?;
+
+            tls_stream.write_all(&padded.request).await?;
+
+            let mut raw_response = vec![];
+            let mut buffer = [0u8; 8192];
+            loop {
+                let n = tls_stream.read(&mut buffer).await?;
+                if n == 0 {
+                    break;
+                }
+                raw_response.extend(&buffer[..n]);
+            }
+
+            let materials = ProveMaterials {
+                request: padded.request,
+                body: padded.body,
+                response: raw_response.clone(),
+                keylog: key_log.take(),
+            };
+            *self.prove_session().lock().unwrap() = Some(materials);
+
+            Ok(raw_response)
+        }
+    }
 }
 
 impl HttpClientExt for ZKClient {
@@ -60,7 +129,6 @@ impl HttpClientExt for ZKClient {
         U: From<Bytes>,
         U: WasmCompatSend + 'static,
     {
-        println!("=============hello from zkclient send===============");
         let client = self.clone();
         let wire_request = encode_request(req);
 
@@ -103,36 +171,3 @@ impl HttpClientExt for ZKClient {
 }
 
 pub type Client<H = ZKClient> = rig_core::client::Client<OpenAICompletionsExt, H>;
-
-#[cfg(test)]
-mod tests {
-    use std::env;
-
-    use crate::client::Client;
-    use rig_core::{client::CompletionClient, completion::Prompt};
-
-    #[tokio::test]
-    async fn test_client() {
-        dotenvy::dotenv().ok();
-        let api_key = env::var("QWEN_API_KEY").expect("QWEN_API_KEY must be set");
-        let base_url = env::var("QWEN_BASE_URL")
-            .unwrap_or_else(|_| "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string());
-
-        let zk_client = crate::client::ZKClient::new("127.0.0.1:9100");
-
-        let client = Client::builder()
-            .api_key(api_key)
-            .base_url(base_url)
-            .http_client(zk_client)
-            .build()
-            .unwrap();
-
-        let agent = client
-            .agent("qwen3.6-plus")
-            .preamble("You are a calculator here to help the user perform arithmetic operations.")
-            .build();
-
-        let response = agent.prompt("Calculate 2 - 5.").await.unwrap();
-        println!("\n\n\n{response}");
-    }
-}

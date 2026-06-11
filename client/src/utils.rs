@@ -1,10 +1,10 @@
-use std::io;
-use regex::bytes::Regex;
 use bytes::Bytes;
+use regex::bytes::Regex;
 use rig_core::{
     http_client::{self, LazyBody, Request, Response},
     wasm_compat::WasmCompatSend,
 };
+use std::io;
 
 pub fn http_client_error(message: impl Into<String>) -> http_client::Error {
     http_client::Error::Instance(Box::new(io::Error::new(
@@ -64,7 +64,23 @@ where
     Bytes::from(wire)
 }
 
-pub fn check_and_padding(data: &[u8]) -> anyhow::Result<Vec<u8>> {
+const HTTP_BODY_SEP: &[u8] = b"\r\n\r\n";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaddedRequest {
+    pub request: Vec<u8>,
+    pub body: Vec<u8>,
+}
+
+fn split_http_body(data: &[u8]) -> anyhow::Result<(&[u8], &[u8])> {
+    let sep_pos = data
+        .windows(HTTP_BODY_SEP.len())
+        .position(|window| window == HTTP_BODY_SEP)
+        .ok_or_else(|| anyhow::anyhow!("HTTP request missing header/body separator"))?;
+    Ok((&data[..sep_pos], &data[sep_pos + HTTP_BODY_SEP.len()..]))
+}
+
+pub fn check_and_padding(data: &[u8]) -> anyhow::Result<PaddedRequest> {
     let target_body_len: usize = std::env::var("CONTENT_LENGTH")
         .map_err(|_| anyhow::anyhow!("CONTENT_LENGTH must be set"))?
         .parse()
@@ -78,15 +94,13 @@ pub fn check_and_padding(data: &[u8]) -> anyhow::Result<Vec<u8>> {
         return Err(anyhow::anyhow!("failed to parse chat completion request"));
     }
 
-    const SEP: &[u8] = b"\r\n\r\n";
-    let sep_pos = data
-        .windows(SEP.len())
-        .position(|w| w == SEP)
-        .ok_or_else(|| anyhow::anyhow!("HTTP request missing header/body separator"))?;
-    let (headers, body) = (&data[..sep_pos], &data[sep_pos + SEP.len()..]);
+    let (headers, body) = split_http_body(data)?;
 
     if body.len() == target_body_len {
-        return Ok(data.to_vec());
+        return Ok(PaddedRequest {
+            request: data.to_vec(),
+            body: body.to_vec(),
+        });
     }
     if body.len() > target_body_len {
         return Err(anyhow::anyhow!(
@@ -134,7 +148,10 @@ pub fn check_and_padding(data: &[u8]) -> anyhow::Result<Vec<u8>> {
     }
     wire.extend_from_slice(b"\r\n\r\n");
     wire.extend_from_slice(&new_body);
-    Ok(wire)
+    Ok(PaddedRequest {
+        request: wire,
+        body: new_body,
+    })
 }
 
 pub fn decode_response<U>(data: Vec<u8>) -> http_client::Result<Response<LazyBody<U>>>

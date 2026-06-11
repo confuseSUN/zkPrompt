@@ -1,12 +1,12 @@
 [package]
-name = "proxy"
+name = "example"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 anyhow = "1.0"
-clap = { version = "4.5", features = ["derive", "env"] }
+client = { path = "../client" }
 dotenvy = "0.15"
-hickory-resolver = "0.24"
-prover = { path = "../prover" }
+rig-core = "0.38"
 tokio = { version = "1", features = ["full"] }

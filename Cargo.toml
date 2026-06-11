@@ -1,8 +1,9 @@
 [workspace]
 members = [
    "client",
+   "example",
    "proxy",
-   "prover",    
+   "prover",
 ]
 resolver = "2"
 
